@@ -8,9 +8,9 @@ try:
     from sentence_transformers import SentenceTransformer
     import numpy as np
     HAVE_SENTENCE_TRANSFORMERS = True
-except ImportError:
+except Exception as e:
     HAVE_SENTENCE_TRANSFORMERS = False
-    print("WARNING: sentence-transformers not available, using lightweight TF-IDF fallback")
+    print(f"WARNING: sentence-transformers not available ({e}), using lightweight TF-IDF fallback")
 
 class EmbeddingService:
     def __init__(self):

@@ -2,9 +2,11 @@ from typing import Dict, List, Optional, Callable
 from datetime import datetime
 import uuid
 import asyncio
+import json
 
 from .embedding_service import embedding_service
 from .graph_service import graph_service
+from .llm_service import llm_service
 
 
 class MemeProcessor:
@@ -16,29 +18,35 @@ class MemeProcessor:
     async def process_raw_content(self, content: str, source: str, metadata: Optional[dict] = None) -> Dict:
         meme_id = str(uuid.uuid4())[:8]
         
-        # Offload heavy embedding generation to thread to avoid blocking event loop
+        # 1. Generate Embedding (still useful for graph topology)
         loop = asyncio.get_event_loop()
         embedding = await loop.run_in_executor(None, embedding_service.generate_embedding, content)
         
-        tags = embedding_service.extract_tags(content)
-        virality = embedding_service.compute_virality_score(content, metadata)
+        # 2. LLM Analysis (The Brain)
+        analysis = await llm_service.analyze_content(content, source)
         
-        # Use semantic clustering instead of just keywords
-        cluster = await self._infer_cluster_semantic(content, embedding)
+        # Extract fields from LLM result
+        summary = analysis.get("summary", content[:100])
+        cluster = analysis.get("cluster", "default")
+        virality = analysis.get("virality", 50)
+        tags = analysis.get("concepts", [])
         
         meme_event = {
             "id": meme_id,
             "source": source,
-            "content": content,
+            "content": summary, # Use the intelligent summary
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "virality": virality,
+            "url": metadata.get("url") if metadata else None,
             "tags": tags,
-            "embedding": embedding
+            "embedding": embedding,
+            "full_text": content # Keep original text in case needed
         }
         
+        # 3. Update Graph
         graph_service.add_node(
             node_id=meme_id,
-            label=content[:50] + "..." if len(content) > 50 else content,
+            label=summary,
             cluster=cluster,
             embedding=embedding
         )
@@ -52,11 +60,14 @@ class MemeProcessor:
         
         self.processed_count += 1
         
+        # 4. Broadcast
         await self._broadcast_meme(meme_event)
         
         return meme_event
     
-    async def _infer_cluster_semantic(self, content: str, embedding: List[float]) -> str:
+    # _infer_cluster_semantic is arguably obsolete with LLM, but keeping as fallback or removing?
+    # For now, we can remove it or just leave it unused. I'll remove it to clean up.
+
         # Define anchor texts for each cluster
         anchors = {
             "spiritual": "soul spirit consciousness awakening meditation divine sacred mystical enlightenment god non-duality",

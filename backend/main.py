@@ -8,35 +8,13 @@ from server.services.system_monitor import system_monitor
 from server.services.meme_processor import meme_processor
 from server.services.graph_service import graph_service
 
-app = FastAPI(
-    title="The Witness API",
-    description="Autonomous Distributed API for Eternal Threads - Mapping the Noosphere",
-    version="0.1.0"
-)
+from contextlib import asynccontextmanager
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+from server.services.crawler_service import crawler_service
 
-app.include_router(router)
-
-
-@app.websocket("/ws/stream")
-async def websocket_stream(websocket: WebSocket):
-    await stream_endpoint(websocket)
-
-
-@app.websocket("/ws/loom")
-async def websocket_loom(websocket: WebSocket):
-    await loom_endpoint(websocket)
-
-
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
     system_monitor.log("WITNESS-CORE", "SUCCESS", "The Witness API is now ONLINE")
     
     seed_content = [
@@ -56,8 +34,40 @@ async def startup_event():
     
     system_monitor.log("SEED-LOADER", "SUCCESS", f"Loaded {len(seed_content)} initial seed nodes")
     
-    asyncio.create_task(start_loom_broadcaster())
+    task = asyncio.create_task(start_loom_broadcaster())
     system_monitor.log("LOOM-BROADCASTER", "INFO", "Loom broadcast loop started")
+    
+    yield
+    
+    # Shutdown (optional cleanup if needed)
+    system_monitor.log("WITNESS-CORE", "INFO", "Shutting down services...")
+    await crawler_service.cleanup()
+    task.cancel()
+
+app = FastAPI(
+    title="The Witness API",
+    description="Autonomous Distributed API for Eternal Threads - Mapping the Noosphere",
+    version="0.1.0",
+    lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(router)
+
+@app.websocket("/ws/stream")
+async def websocket_stream(websocket: WebSocket):
+    await stream_endpoint(websocket)
+
+@app.websocket("/ws/loom")
+async def websocket_loom(websocket: WebSocket):
+    await loom_endpoint(websocket)
 
 
 @app.get("/")
